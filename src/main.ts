@@ -1,60 +1,65 @@
-import './style.css'
-import typescriptLogo from './assets/typescript.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import { setupCounter } from './counter.ts'
+import { Engine } from './core/engine';
+import { initRapier } from './core/physics';
+import { preloadModels } from './core/assets';
+import { AudioSystem } from './core/audio';
+import { Game } from './game/game';
+import { UI } from './ui/ui';
+import { VEHICLES } from './game/vehicle';
 
-document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-<section id="center">
-  <div class="hero">
-    <img src="${heroImg}" class="base" width="170" height="179">
-    <img src="${typescriptLogo}" class="framework" alt="TypeScript logo"/>
-    <img src="${viteLogo}" class="vite" alt="Vite logo" />
-  </div>
-  <div>
-    <h1>Get started</h1>
-    <p>Edit <code>src/main.ts</code> and save to test <code>HMR</code></p>
-  </div>
-  <button id="counter" type="button" class="counter"></button>
-</section>
+declare global {
+  interface Window {
+    __td: ReturnType<Game['testApi']>;
+  }
+}
 
-<div class="ticks"></div>
+async function boot() {
+  const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+  const engine = new Engine({ canvas });
+  const ui = new UI();
+  const audio = new AudioSystem();
 
-<section id="next-steps">
-  <div id="docs">
-    <svg class="icon" role="presentation" aria-hidden="true"><use href="/icons.svg#documentation-icon"></use></svg>
-    <h2>Documentation</h2>
-    <p>Your questions, answered</p>
-    <ul>
-      <li>
-        <a href="https://vite.dev/" target="_blank">
-          <img class="logo" src="${viteLogo}" alt="" />
-          Explore Vite
-        </a>
-      </li>
-      <li>
-        <a href="https://www.typescriptlang.org" target="_blank">
-          <img class="button-icon" src="${typescriptLogo}" alt="">
-          Learn more
-        </a>
-      </li>
-    </ul>
-  </div>
-  <div id="social">
-    <svg class="icon" role="presentation" aria-hidden="true"><use href="/icons.svg#social-icon"></use></svg>
-    <h2>Connect with us</h2>
-    <p>Join the Vite community</p>
-    <ul>
-      <li><a href="https://github.com/vitejs/vite" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#github-icon"></use></svg>GitHub</a></li>
-      <li><a href="https://chat.vite.dev/" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#discord-icon"></use></svg>Discord</a></li>
-      <li><a href="https://x.com/vite_js" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#x-icon"></use></svg>X.com</a></li>
-      <li><a href="https://bsky.app/profile/vite.dev" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#bluesky-icon"></use></svg>Bluesky</a></li>
-    </ul>
-  </div>
-</section>
+  ui.setLoadingScreen();
+  ui.setLoading(0.05);
 
-<div class="ticks"></div>
-<section id="spacer"></section>
-`
+  await initRapier();
+  ui.setLoading(0.3);
 
-setupCounter(document.querySelector<HTMLButtonElement>('#counter')!)
+  const vehicleModels = VEHICLES.filter((v) => !v.model.startsWith('proc:')).map(
+    (v) => `/assets/models/vehicles/${v.model}`
+  );
+  const npcModels = [
+    'sedan.glb', 'hatchback-sports.glb', 'van.glb', 'taxi.glb', 'suv-luxury.glb',
+    'ambulance.glb', 'police.glb', 'sedan-sports.glb', 'cone.glb',
+  ].map((m) => `/assets/models/vehicles/${m}`);
+  const propModels = [
+    '/assets/models/props/ramp.glb',
+    '/assets/models/props/billboard.glb',
+    '/assets/models/props/flagCheckers.glb',
+  ];
+  await Promise.all([
+    preloadModels([...vehicleModels, ...npcModels, ...propModels]).then(() => ui.setLoading(0.7)),
+    audio.preload().then(() => ui.setLoading(0.85)),
+  ]);
+
+  const game = new Game(engine, audio, ui);
+  window.__td = game.testApi();
+
+  ui.setLoading(1);
+  engine.start();
+  game.showTitle();
+  // Give the backdrop level a beat to load before revealing.
+  setTimeout(() => ui.setLoading(1, true), 400);
+
+  // First user interaction unlocks audio.
+  window.addEventListener(
+    'pointerdown',
+    () => {
+      audio.resume();
+    },
+    { once: true }
+  );
+}
+
+boot().catch((err) => {
+  console.error('[boot] failed:', err?.message ?? err, err?.stack);
+});

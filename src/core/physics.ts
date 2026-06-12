@@ -10,7 +10,7 @@ export interface ContactInfo {
 }
 
 export interface ColliderTag {
-  kind: 'dummy' | 'vehicle' | 'prop' | 'ground' | 'sensor';
+  kind: 'dummy' | 'vehicle' | 'prop' | 'ground' | 'sensor' | 'npc';
   /** e.g. body part name ('head', 'torso') or prop type ('ramp', 'wall'). */
   name: string;
   /** Sound material for impact audio. */
@@ -42,6 +42,8 @@ export class Physics {
 
   /** Filled each step with contact-force events above threshold. */
   contacts: ContactInfo[] = [];
+  /** Sensor intersections started this step (e.g. turbo pads, mines). */
+  sensorHits: Array<{ sensor: ColliderTag; other: ColliderTag | null }> = [];
 
   constructor(gravityY = -19) {
     // Slightly heavier-than-earth gravity reads as "arcade snappy" like TD.
@@ -78,6 +80,10 @@ export class Physics {
     this.bindings = this.bindings.filter((b) => b.body !== body);
   }
 
+  allBindings(): Binding[] {
+    return this.bindings;
+  }
+
   step(dt: number) {
     this.world.integrationParameters.dt = dt;
     for (const b of this.bindings) {
@@ -104,9 +110,17 @@ export class Physics {
       if (tag1) this.contacts.push({ tag: tag1, otherTag: tag2, force, point: mid });
       if (tag2) this.contacts.push({ tag: tag2, otherTag: tag1, force, point: mid.clone() });
     });
-    // Collision (started/stopped) events are drained implicitly; we only use
-    // contact force events for scoring.
-    this.eventQueue.drainCollisionEvents(() => {});
+    this.sensorHits.length = 0;
+    this.eventQueue.drainCollisionEvents((h1, h2, started) => {
+      if (!started) return;
+      const c1 = this.world.getCollider(h1);
+      const c2 = this.world.getCollider(h2);
+      if (!c1 || !c2) return;
+      const tag1 = this.getTag(h1);
+      const tag2 = this.getTag(h2);
+      if (c1.isSensor() && tag1) this.sensorHits.push({ sensor: tag1, other: tag2 });
+      if (c2.isSensor() && tag2) this.sensorHits.push({ sensor: tag2, other: tag1 });
+    });
   }
 
   /** Write interpolated transforms into the bound visuals. */
