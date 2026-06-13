@@ -517,19 +517,35 @@ export class Game {
       this.dummy.updateFlight(dt, grounded);
     }
 
-    // Crash detection via sudden speed loss (robust against ramps and turbos,
-    // which redirect or add velocity without bleeding speed).
+    // A car that leaves a ramp spinning can't hold its passenger: a violent
+    // mid-air tumble rips the straps even without a ground impact.
+    if (this.dummy?.attached && !this.vehicle.grounded) {
+      const av = this.vehicle.body.angvel();
+      const spin = Math.hypot(av.x, av.y, av.z);
+      if (spin > 4.2) {
+        this.dummy.release();
+        this.onEjection();
+      }
+    }
+
+    // Crash detection: sudden speed loss tells us how hard the hit was, but it
+    // only counts when there's a real collision this frame. The raycast-wheel
+    // grip model can spike deceleration on flat ground with no contact at all,
+    // so gating on an actual vehicle manifold (not just wheels-grounded) keeps
+    // the car from spuriously totalling itself mid-drive.
     const speedNow = this.vehicle.speed;
     const decelG = Math.max(0, this.prevVehicleSpeed - speedNow) / dt / 9.81;
     this.prevVehicleSpeed = speedNow;
     this.decelLog.push([+this.runTime.toFixed(2), +decelG.toFixed(1)]);
-    // Only count g-spikes as crashes when something was actually touched -
-    // strap-solver corrections mid-air would otherwise read as phantom hits.
-    const touching =
-      this.vehicle.grounded ||
-      this.physics.contacts.some((c) => c.tag.kind === 'vehicle');
-    // Skip the first instants: suspension settling jolts are not crashes.
-    if (touching && this.runTime > 0.45) this.handleDeceleration(decelG);
+    let peakSolidImpact = 0;
+    for (const c of this.physics.contacts) {
+      if (c.tag.kind === 'vehicle' && c.otherTag && c.otherTag.kind !== 'dummy') {
+        peakSolidImpact = Math.max(peakSolidImpact, c.force);
+      }
+    }
+    if (this.runTime > 0.45 && peakSolidImpact > 1500) {
+      this.handleDeceleration(decelG, peakSolidImpact);
+    }
 
     this.processContacts(this.physics.contacts);
     this.processSensors();
@@ -575,8 +591,12 @@ export class Game {
     return ground !== null;
   }
 
-  /** Strap breaking, vehicle wrecking and wheel pops, all from g-load. */
-  private handleDeceleration(decelG: number) {
+  /**
+   * Strap breaking, vehicle wrecking and wheel pops on a real impact. decelG is
+   * how hard the speed dropped this frame; peakImpact is the strongest solid
+   * contact force, so a gentle ramp scrape never totals the car.
+   */
+  private handleDeceleration(decelG: number, peakImpact: number) {
     if (!this.vehicle || !this.dummy) return;
     if (decelG < 3) return;
 
@@ -587,7 +607,7 @@ export class Game {
         if (!this.dummy.attached) this.onEjection();
       }
     }
-    if (decelG > 9) {
+    if (decelG > 9 && peakImpact > 14000) {
       const at = this.vehicle.position;
       if (!this.vehicle.crashed) {
         this.vehicle.markCrashed();
@@ -744,7 +764,7 @@ export class Game {
     const dPos = this.dummy.pelvisPosition;
     const vPos = this.vehicle.position;
     const outOfWorld = (p: THREE.Vector3) =>
-      p.y < -12 || Math.abs(p.x) > 160 || p.z > 190 || p.z < -60;
+      p.y < -12 || Math.abs(p.x) > 220 || p.z > 245 || p.z < -60;
     const fellOut = outOfWorld(dPos) && outOfWorld(vPos);
     if ((vQuiet && dQuiet && this.runTime > 3) || fellOut) {
       this.quietTime += dt;
