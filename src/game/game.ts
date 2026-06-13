@@ -197,6 +197,10 @@ export class Game {
         this.replayPlaying = !this.replayPlaying;
         return this.replayPlaying;
       },
+      onSteer: (dir, active) => {
+        if (dir === 'left') this.steerLeft = active;
+        else this.steerRight = active;
+      },
     });
   }
 
@@ -467,6 +471,8 @@ export class Game {
     this.runTime = 0;
     this.quietTime = 0;
     this.slowmoUsed = false;
+    this.steerLeft = false;
+    this.steerRight = false;
     this.scoring.reset();
     this.scoring.stats.launchPower = power;
     this.ui.setGauge(0, false);

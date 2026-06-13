@@ -885,26 +885,57 @@ body {
   border-color: #ffb904;
 }
 
-/* steering hint during run */
-.steer-hint {
+/* On-screen steering buttons during a run (touch-friendly) */
+.steer-controls {
   position: absolute;
-  bottom: 34px;
-  left: 38px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--cream-dark);
-  text-shadow: 0 2px 0 rgba(40, 20, 8, 0.8);
-  z-index: 8;
+  bottom: 30px;
+  left: 30px;
+  display: flex;
+  gap: 18px;
+  pointer-events: auto;
+  z-index: 12;
 }
 
-.keycap {
-  display: inline-block;
-  background: #4d3826;
-  border: 2px solid var(--cream-dark);
-  border-radius: 6px;
-  padding: 1px 7px;
-  font-size: 12px;
-  margin: 0 2px;
+.steer-btn {
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  border: 5px solid var(--cream);
+  outline: 4px solid #8a3414;
+  background: radial-gradient(circle at 50% 35%, #e8743a, #b04a1d 60%, #8a3414);
+  color: var(--cream);
+  font-family: 'Titan One', sans-serif;
+  font-size: 40px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 7px 0 rgba(40, 16, 4, 0.55);
+  text-shadow: -2px -2px 0 #6f2810, 2px -2px 0 #6f2810, -2px 2px 0 #6f2810, 2px 2px 0 #6f2810;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.06s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.steer-btn.held {
+  transform: translateY(4px);
+  box-shadow: 0 3px 0 rgba(40, 16, 4, 0.55);
+  background: radial-gradient(circle at 50% 35%, #ffd23e, #e8743a 60%, #b04a1d);
+}
+
+@media (max-width: 760px) {
+  .steer-btn {
+    width: 124px;
+    height: 124px;
+    font-size: 46px;
+  }
+  .steer-controls {
+    gap: 22px;
+    bottom: 24px;
+    left: 22px;
+  }
 }
 
 /* Loading */

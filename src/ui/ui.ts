@@ -20,6 +20,7 @@ export interface UICallbacks {
   onReplaySeek(t: number): void;
   onReplaySpeed(speed: number): void;
   onReplayPlayPause(): boolean;
+  onSteer(dir: 'left' | 'right', active: boolean): void;
 }
 
 const INJURY_ICON: Record<string, string> = {
@@ -70,7 +71,10 @@ export class UI {
         <div class="hud-combo td-text hidden">x1</div>
         <div class="hud-telemetry"></div>
         <div class="injury-stack"></div>
-        <div class="steer-hint hidden"><span class="keycap">◀</span><span class="keycap">▶</span> steer</div>
+        <div class="steer-controls hidden">
+          <button class="steer-btn" id="steer-left" aria-label="Steer left">◀</button>
+          <button class="steer-btn" id="steer-right" aria-label="Steer right">▶</button>
+        </div>
       </div>
 
       <div id="setup-bar" class="hidden">
@@ -145,6 +149,32 @@ export class UI {
     seek.oninput = () => cb.onReplaySeek(Number(seek.value) / 1000);
     document.getElementById('rp-slower')!.onclick = () => cb.onReplaySpeed(-1);
     document.getElementById('rp-faster')!.onclick = () => cb.onReplaySpeed(1);
+
+    // On-screen steering: hold-to-steer, release-to-center. Press is captured so
+    // a finger that slides off the button still releases cleanly, and the touch
+    // never doubles as a camera-drag on the canvas.
+    for (const dir of ['left', 'right'] as const) {
+      const btn = document.getElementById(`steer-${dir}`)!;
+      const press = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        btn.classList.add('held');
+        cb.onSteer(dir, true);
+      };
+      const release = () => {
+        if (!btn.classList.contains('held')) return;
+        btn.classList.remove('held');
+        cb.onSteer(dir, false);
+      };
+      btn.addEventListener('pointerdown', (e) => {
+        press(e);
+        (e as PointerEvent).pointerId !== undefined &&
+          btn.setPointerCapture((e as PointerEvent).pointerId);
+      });
+      btn.addEventListener('pointerup', release);
+      btn.addEventListener('pointercancel', release);
+      btn.addEventListener('lostpointercapture', release);
+    }
   }
 
   /** Minimal loading screen available before build() runs. */
@@ -178,6 +208,8 @@ export class UI {
     ];
     for (const id of all) this.el.get(id)!.classList.toggle('hidden', !ids.includes(id));
     this.el.get('mute-btn')!.classList.remove('hidden');
+    // Steer controls live inside #hud; only showRunning() re-reveals them.
+    this.root.querySelector('.steer-controls')?.classList.add('hidden');
   }
 
   showTitle() {
@@ -219,7 +251,7 @@ export class UI {
 
   showRunning() {
     this.show(['hud']);
-    this.root.querySelector('.steer-hint')!.classList.remove('hidden');
+    this.root.querySelector('.steer-controls')!.classList.remove('hidden');
   }
 
   showResults(opts: {
