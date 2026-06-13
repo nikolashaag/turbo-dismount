@@ -177,6 +177,8 @@ const DUMMY_FILTER_FREE = DUMMY_FILTER_ATTACHED | GROUP.VEHICLE;
 
 let dummyMaterial: THREE.MeshStandardMaterial | null = null;
 let jointMaterial: THREE.MeshStandardMaterial | null = null;
+let faceMaterial: THREE.MeshStandardMaterial | null = null;
+let helmetMaterial: THREE.MeshStandardMaterial | null = null;
 
 export class Dummy {
   parts = new Map<PartId, DummyPart>();
@@ -208,6 +210,8 @@ export class Dummy {
         color: PALETTE.dummyJoint,
         roughness: 0.7,
       });
+      faceMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2420, roughness: 0.5 });
+      helmetMaterial = new THREE.MeshStandardMaterial({ color: 0xd9952b, roughness: 0.5 });
     }
 
     const poseDef = POSES[pose];
@@ -349,6 +353,23 @@ export class Dummy {
       joint.position.copy(def.pivotInSelf);
       joint.castShadow = true;
       g.add(joint);
+    }
+    // Mr. Dismount's face: two deadpan eyes facing forward (+Z).
+    if (def.id === 'head' && def.shape.type === 'ball') {
+      const r = def.shape.r;
+      const eyeGeo = new THREE.SphereGeometry(r * 0.2, 10, 8);
+      for (const sx of [-1, 1]) {
+        const eye = new THREE.Mesh(eyeGeo, faceMaterial!);
+        eye.position.set(sx * r * 0.42, r * 0.12, r * 0.9);
+        eye.scale.z = 0.5;
+        g.add(eye);
+      }
+      // Helmet stripe cap so the head reads as a crash-test dummy.
+      const cap = new THREE.Mesh(
+        new THREE.SphereGeometry(r * 1.02, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.42),
+        helmetMaterial!
+      );
+      g.add(cap);
     }
     return g;
   }
