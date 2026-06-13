@@ -448,6 +448,9 @@ export class Game {
     this.state = 'charging';
     this.chargeT = 0;
     this.ui.hidePickers();
+    // Declutter while revving: the gauge takes the bottom-center, so the setup
+    // buttons step aside (also avoids a gauge/setup overlap in landscape).
+    this.ui.setSetupBarVisible(false);
     this.audio.startEngine();
   }
 
@@ -456,6 +459,7 @@ export class Game {
     if (this.power < 0.06) {
       this.state = 'setup';
       this.ui.setGauge(0, false);
+      this.ui.setSetupBarVisible(true);
       this.ui.banner('STALLED', 'Hold to rev the engine, then release!', 1800);
       this.audio.setEngine(0, 0.3);
       this.audio.ui('error');

@@ -491,6 +491,12 @@ export class UI {
     this.el.get('dismount-btn')!.classList.toggle('charging', visible);
   }
 
+  /** Toggle the setup buttons + hint without touching the DISMOUNT badge. */
+  setSetupBarVisible(visible: boolean) {
+    this.el.get('setup-bar')!.classList.toggle('hidden', !visible);
+    this.el.get('dismount-hint')!.classList.toggle('hidden', !visible);
+  }
+
   hideHUDForSettle() {
     this.el.get('setup-bar')!.classList.add('hidden');
     this.el.get('dismount-btn')!.classList.add('hidden');

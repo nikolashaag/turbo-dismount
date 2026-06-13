@@ -971,3 +971,177 @@ body {
 #loading .td-text {
   font-size: 40px;
 }
+
+/* ====================================================================
+   Responsive: phones in portrait (narrow) and landscape (short).
+   The setup buttons and the DISMOUNT badge must never overlap, and the
+   level grid must fit and scroll. Steering buttons (run phase) and the
+   setup bar (setup phase) never coexist, so both may own bottom-left.
+   ==================================================================== */
+
+/* Portrait / narrow phones */
+@media (max-width: 640px) {
+  .levels-heading {
+    font-size: 30px;
+  }
+  #screen-levels {
+    justify-content: flex-start;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 78px 12px 28px;
+    gap: 12px;
+  }
+  .levels-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    width: 100%;
+    max-width: 440px;
+  }
+  .level-card {
+    padding: 12px 14px;
+  }
+  .mode-row .hint {
+    font-size: 12px;
+  }
+
+  /* Setup bar moves to the bottom-left, shrunk; DISMOUNT shrinks bottom-right.
+     They sit on opposite sides so they can't overlap. */
+  #setup-bar {
+    left: 12px;
+    transform: none;
+    bottom: 16px;
+    gap: 8px;
+  }
+  .setup-btn {
+    width: 64px;
+    height: 64px;
+    font-size: 9px;
+    border-width: 3px;
+    outline-width: 2px;
+    box-shadow: 0 4px 0 rgba(40, 16, 4, 0.55);
+  }
+  .setup-btn .ico {
+    font-size: 20px;
+  }
+  .setup-btn .val {
+    font-size: 7.5px;
+    max-width: 58px;
+  }
+
+  #dismount-btn {
+    width: 104px;
+    height: 104px;
+    font-size: 15px;
+    right: 14px;
+    bottom: 14px;
+    border-width: 4px;
+    outline-width: 3px;
+    box-shadow: 0 6px 0 rgba(40, 16, 4, 0.55);
+  }
+
+  /* The hint text would crowd the small layout; the button label carries it. */
+  .hint-text {
+    display: none;
+  }
+
+  /* Gauge floats above the button row during the charge. */
+  #gauge {
+    bottom: 130px;
+    width: min(440px, 80vw);
+    height: 26px;
+    border-width: 3px;
+  }
+
+  /* Replay bar: tighter so it fits a narrow screen. */
+  #replay-bar {
+    gap: 7px;
+    padding: 8px 12px;
+    bottom: 18px;
+    max-width: 94vw;
+  }
+  #replay-bar input[type='range'] {
+    width: 34vw;
+  }
+  #replay-bar button {
+    font-size: 17px;
+  }
+  #replay-bar .speed {
+    min-width: 34px;
+    font-size: 12px;
+  }
+  .replay-title {
+    font-size: 24px;
+    top: 20px;
+  }
+
+  /* Score / telemetry trimmed so they don't crowd the top corners. */
+  .hud-score .score {
+    font-size: 34px;
+  }
+  .hud-combo {
+    top: 88px;
+    font-size: 22px;
+  }
+  .results-panel h2 {
+    font-size: 26px;
+  }
+  .results-panel .final-score {
+    font-size: 38px;
+  }
+}
+
+/* Landscape phones: plenty of width, but very short height. Shrink the tall
+   elements so the top HUD and bottom controls both fit. */
+@media (orientation: landscape) and (max-height: 520px) {
+  #dismount-btn {
+    width: 96px;
+    height: 96px;
+    font-size: 14px;
+    bottom: 12px;
+    right: 16px;
+    border-width: 4px;
+    outline-width: 3px;
+  }
+  .setup-btn {
+    width: 62px;
+    height: 62px;
+    font-size: 9px;
+  }
+  .setup-btn .ico {
+    font-size: 19px;
+  }
+  #setup-bar {
+    bottom: 12px;
+    gap: 10px;
+  }
+  .hint-text {
+    display: none;
+  }
+  #gauge {
+    bottom: 14px;
+    width: min(360px, 42vw);
+    height: 24px;
+  }
+  .steer-btn {
+    width: 84px;
+    height: 84px;
+    font-size: 34px;
+  }
+  .steer-controls {
+    bottom: 12px;
+    left: 14px;
+    gap: 14px;
+  }
+  #screen-levels {
+    justify-content: flex-start;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 64px 16px 20px;
+  }
+  .levels-heading {
+    font-size: 26px;
+  }
+  .title-logo {
+    font-size: 46px;
+  }
+}
