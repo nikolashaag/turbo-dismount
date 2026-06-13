@@ -497,9 +497,10 @@ export class Game {
 
     this.runTime += dt;
 
-    // Steering input. Right key steers the chassis toward +X (screen-right when
-    // the chase cam looks down +Z), so left/right match the player's view.
-    this.vehicle.steerInput = (this.steerRight ? 1 : 0) - (this.steerLeft ? 1 : 0);
+    // Steering input. With the chase cam looking down +Z, screen-right is the
+    // -X direction, so Left must drive +X and Right -X to match the player's
+    // view. Both the keyboard and the on-screen buttons feed these flags.
+    this.vehicle.steerInput = (this.steerLeft ? 1 : 0) - (this.steerRight ? 1 : 0);
     this.vehicle.fixedStep(dt);
     // Ghost traffic becomes physical shortly before contact so collisions are
     // dynamic-vs-dynamic (a kinematic body would slingshot the player).
