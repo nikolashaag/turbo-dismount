@@ -354,12 +354,13 @@ export class Game {
       yaw: hs.yaw,
     });
     if (instance) {
-      // Tag prop colliders with the hotspot index (mines need to find their instance).
+      // Sensors (mine, turbo) carry their hotspot index so the game can find
+      // and remove the right instance. Solid props keep their own ownerIds.
       for (const body of instance.bodies) {
         for (let i = 0; i < body.numColliders(); i++) {
           const col = body.collider(i);
           const tag = this.physics.getTag(col.handle);
-          if (tag) tag.ownerId = index;
+          if (tag && tag.kind === 'sensor') tag.ownerId = index;
         }
       }
     }
@@ -493,7 +494,19 @@ export class Game {
     // Steering input.
     this.vehicle.steerInput = (this.steerLeft ? 1 : 0) - (this.steerRight ? 1 : 0);
     this.vehicle.fixedStep(dt);
-    for (const npc of this.npcs) npc.fixedStep(dt);
+    // Ghost traffic becomes physical shortly before contact so collisions are
+    // dynamic-vs-dynamic (a kinematic body would slingshot the player).
+    const vPos = this.vehicle.position;
+    const dPos = this.dummy && !this.dummy.attached ? this.dummy.pelvisPosition : null;
+    for (const npc of this.npcs) {
+      if (!npc.awakened) {
+        const p = npc.body.translation();
+        const dv = Math.hypot(p.x - vPos.x, p.z - vPos.z);
+        const dd = dPos ? Math.hypot(p.x - dPos.x, p.z - dPos.z) : 99;
+        if (dv < 7.5 || dd < 4) npc.awaken();
+      }
+      npc.fixedStep(dt);
+    }
 
     this.physics.step(dt);
     this.replay.capture();
@@ -510,7 +523,13 @@ export class Game {
     const decelG = Math.max(0, this.prevVehicleSpeed - speedNow) / dt / 9.81;
     this.prevVehicleSpeed = speedNow;
     this.decelLog.push([+this.runTime.toFixed(2), +decelG.toFixed(1)]);
-    this.handleDeceleration(decelG);
+    // Only count g-spikes as crashes when something was actually touched -
+    // strap-solver corrections mid-air would otherwise read as phantom hits.
+    const touching =
+      this.vehicle.grounded ||
+      this.physics.contacts.some((c) => c.tag.kind === 'vehicle');
+    // Skip the first instants: suspension settling jolts are not crashes.
+    if (touching && this.runTime > 0.45) this.handleDeceleration(decelG);
 
     this.processContacts(this.physics.contacts);
     this.processSensors();
@@ -608,21 +627,18 @@ export class Game {
         if (c.force > 12000 && !this.slowmoUsed) this.triggerSlowmo();
         if (c.otherTag?.kind === 'npc') this.handleNpcContact(c);
         // Hard dummy impact also breaks straps (e.g. dummy clipped a wall).
-        if (this.dummy.attached && c.force > 7000) {
+        // Feet/shins dragging the road shouldn't count - that's just style.
+        const isLeg = c.tag.name.startsWith('shin') || c.tag.name.startsWith('thigh');
+        const limit = isLeg ? 19000 : 8500;
+        if (this.dummy.attached && c.force > limit) {
           this.dummy.release();
           this.onEjection();
         }
       }
 
-      // NPC got rammed by debris/props etc.
-      if (c.tag.kind === 'npc' && c.otherTag && c.otherTag.kind !== 'ground') {
-        const npc = this.npcs.find((n) => `npc-${n.id}` === c.tag.name);
-        if (npc && !npc.awakened && c.force > 1200) {
-          npc.awaken();
-          this.scoring.npcHit(c.tag.name, c.point);
-          this.audio.impact('metal', 0.8);
-          this.particles.sparks(c.point, 0.8);
-        }
+      // NPC got rammed by debris/props/other awakened NPCs.
+      if (c.tag.kind === 'npc' && c.otherTag && c.otherTag.kind !== 'ground' && c.force > 1200) {
+        this.handleNpcContact(c);
       }
 
       if (c.tag.name === 'brick' && c.force > 2600) {
@@ -638,9 +654,9 @@ export class Game {
     const npcTag = c.tag.kind === 'npc' ? c.tag : c.otherTag;
     if (!npcTag) return;
     const npc = this.npcs.find((n) => `npc-${n.id}` === npcTag.name);
-    if (npc && !npc.awakened) {
-      npc.awaken();
-      this.scoring.npcHit(npcTag.name, c.point);
+    if (!npc) return;
+    npc.awaken();
+    if (this.scoring.npcHit(npcTag.name, c.point)) {
       this.audio.impact('metal', 1);
       this.audio.impact('glass', 0.7);
       this.particles.sparks(c.point, 1);
@@ -655,16 +671,14 @@ export class Game {
         const last = this.turboCooldown.get(key) ?? -10;
         if (this.runTime - last < 1.2) continue;
         this.turboCooldown.set(key, this.runTime);
+        this.vehicle.applyBoost(9);
         const rot = this.vehicle.body.rotation();
-        const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(
-          new THREE.Quaternion(rot.x, rot.y, rot.z, rot.w)
-        );
-        const impulse = fwd.multiplyScalar(this.vehicle.def.mass * 9);
-        this.vehicle.body.applyImpulse({ x: impulse.x, y: 0, z: impulse.z }, true);
+        const fwd = new THREE.Vector3(0, 0, 1)
+          .applyQuaternion(new THREE.Quaternion(rot.x, rot.y, rot.z, rot.w))
+          .normalize();
         this.audio.thud(0.8);
-        this.audio.impact('metal', 0.3);
         const pos = this.vehicle.position;
-        for (let i = 0; i < 8; i++) this.particles.turboFlame(pos, fwd.clone().normalize());
+        for (let i = 0; i < 8; i++) this.particles.turboFlame(pos, fwd);
         this.ui.banner('TURBO!', '', 700);
       }
       if (hit.sensor.name === 'mine') {
@@ -727,7 +741,11 @@ export class Game {
     if (!this.vehicle || !this.dummy) return;
     const vQuiet = this.vehicle.speed < 0.7;
     const dQuiet = this.dummy.isResting();
-    const fellOut = this.dummy.pelvisPosition.y < -25;
+    const dPos = this.dummy.pelvisPosition;
+    const vPos = this.vehicle.position;
+    const outOfWorld = (p: THREE.Vector3) =>
+      p.y < -12 || Math.abs(p.x) > 160 || p.z > 190 || p.z < -60;
+    const fellOut = outOfWorld(dPos) && outOfWorld(vPos);
     if ((vQuiet && dQuiet && this.runTime > 3) || fellOut) {
       this.quietTime += dt;
     } else {

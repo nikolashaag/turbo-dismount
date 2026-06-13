@@ -69,8 +69,8 @@ export class Scoring {
     }
 
     if (dummy && !dummy.attached) {
-      // Somersault bonus per full rotation while airborne.
-      const turns = Math.floor(dummy.spinAccum / (Math.PI * 2));
+      // Somersault bonus per (slightly forgiving) full rotation while airborne.
+      const turns = Math.floor(dummy.spinAccum / 5.8);
       while (this.spinAwarded < turns) {
         this.spinAwarded++;
         this.stats.somersaults++;
@@ -142,7 +142,7 @@ export class Scoring {
 
   private brickImpact(c: ContactInfo) {
     if (c.force < 2600) return;
-    const key = `${Math.round(c.point.x * 4)}:${Math.round(c.point.y * 4)}:${Math.round(c.point.z * 4)}`;
+    const key = `b${c.tag.ownerId ?? -1}`;
     if (this.bricksSeen.has(key)) return;
     this.bricksSeen.add(key);
     this.stats.bricksScattered++;

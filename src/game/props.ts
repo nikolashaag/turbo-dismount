@@ -129,6 +129,7 @@ function buildRamp(physics: Physics, scene: THREE.Scene, frame: PropFrame): Prop
 
 let brickGeo: THREE.BoxGeometry | null = null;
 let brickMats: THREE.MeshStandardMaterial[] = [];
+let brickCounter = 0;
 
 function buildBrickWall(physics: Physics, scene: THREE.Scene, frame: PropFrame): PropInstance {
   if (!brickGeo) {
@@ -163,7 +164,7 @@ function buildBrickWall(physics: Physics, scene: THREE.Scene, frame: PropFrame):
         .setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS)
         .setContactForceEventThreshold(2500);
       const collider = physics.world.createCollider(col, body);
-      physics.tagCollider(collider, { kind: 'prop', name: 'brick', material: 'wood' });
+      physics.tagCollider(collider, { kind: 'prop', name: 'brick', material: 'wood', ownerId: brickCounter++ });
       const mesh = new THREE.Mesh(brickGeo, brickMats[(r * cols + c) % brickMats.length]);
       mesh.castShadow = true;
       mesh.receiveShadow = true;

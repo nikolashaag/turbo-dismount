@@ -146,6 +146,7 @@ export const LEVELS: LevelDef[] = [
       ctx.addRoad(V(-5.5, 0, -16), V(-5.5, 0, 92), 4.5);
       ctx.addRoad(V(5.5, 0, -16), V(5.5, 0, 92), 4.5);
       // Finish gantry + brick stack across the player's lane.
+      await ctx.addProp('brickwall', V(0, 0, 90));
       ctx.addBox({ size: [0.5, 6, 0.5], position: V(-8.5, 3, 88), color: 0xd9d3c5 });
       ctx.addBox({ size: [0.5, 6, 0.5], position: V(8.5, 3, 88), color: 0xd9d3c5 });
       ctx.addBox({ size: [17.5, 0.7, 0.5], position: V(0, 6, 88), color: 0xc8332b, collider: false });
@@ -198,7 +199,7 @@ export const LEVELS: LevelDef[] = [
       // Mega ramp: quarter-pipe arc up to ~70 degrees.
       ctx.addArcTrack({
         x: 0, zStart: 100, radius: 42, width: 9,
-        angleFrom: 0, angleTo: (70 * Math.PI) / 180, segments: 16, rails: true,
+        angleFrom: 0, angleTo: (70 * Math.PI) / 180, segments: 30, rails: true,
       });
       // Support pillars.
       for (const [y, z] of [
@@ -232,7 +233,7 @@ export const LEVELS: LevelDef[] = [
     npcs: [],
     scoreTarget: 400000,
     challenges: [
-      { id: 'looper', label: 'Get higher than 12m in the loop', test: (s) => s.maxAltitude >= 12 },
+      { id: 'looper', label: 'Get higher than 10m in the loop', test: (s) => s.maxAltitude >= 10 },
       { id: 'score', label: 'Score 400 000', test: (s) => s.score >= 400000 },
       { id: 'speed', label: 'Hit 110 km/h', test: (s) => s.maxSpeed >= 30.5 },
     ],
@@ -240,13 +241,13 @@ export const LEVELS: LevelDef[] = [
       ctx.addGround();
       ctx.addSkyline();
       ctx.addRoad(V(0, 0, -16), V(0, 0, 46));
-      // The loop: full circle, radius 7.5, with entry/exit lips.
+      // The loop: a corkscrew helix so the exit lands beside the entry.
       ctx.addArcTrack({
-        x: 0, zStart: 53, radius: 7.5, width: 6.5,
-        angleFrom: -0.25, angleTo: Math.PI * 2 + 0.25, segments: 30, rails: true,
-        color: 0x55483c,
+        x: 0, zStart: 53, radius: 8, width: 6.5,
+        angleFrom: 0, angleTo: Math.PI * 2, segments: 64, rails: true,
+        color: 0x55483c, xShift: -7.4,
       });
-      ctx.addRoad(V(0, 0, 56), V(0, 0, 90));
+      ctx.addRoad(V(-7.4, 0, 56), V(-7.4, 0, 90));
       for (let z = -6; z < 44; z += 13) {
         ctx.addTree(-6.5, z);
         ctx.addTree(6.5, z + 6);

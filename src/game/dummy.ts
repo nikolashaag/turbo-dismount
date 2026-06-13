@@ -105,6 +105,7 @@ export const POSES: Record<PoseId, PoseDef> = {
     },
     straps: [
       { part: 'pelvis', breakForce: 8 },
+      { part: 'torso', breakForce: 8 },
       { part: 'armLowerL', breakForce: 3.5 },
       { part: 'armLowerR', breakForce: 3.5 },
     ],
@@ -137,6 +138,8 @@ export const POSES: Record<PoseId, PoseDef> = {
     straps: [
       { part: 'shinL', breakForce: 4.5 },
       { part: 'shinR', breakForce: 4.5 },
+      // Hidden balance assist; breaks with the legs.
+      { part: 'pelvis', breakForce: 5 },
     ],
   },
   clinger: {
@@ -301,7 +304,7 @@ export class Dummy {
       .setTranslation(position.x, position.y, position.z)
       .setRotation({ x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w })
       .setLinearDamping(0.1)
-      .setAngularDamping(1.4)
+      .setAngularDamping(1.0)
       .setCcdEnabled(true);
     if (def.id === 'pelvis') bodyDesc.setAdditionalSolverIterations(4);
     const body = this.physics.world.createRigidBody(bodyDesc);

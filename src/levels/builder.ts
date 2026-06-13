@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { Physics, RAPIER } from '../core/physics';
 import { loadModel } from '../core/assets';
-import { GROUP, groups, PALETTE, ALL } from '../game/data';
+import { GROUP, groups, PALETTE, ALL, PropType } from '../game/data';
+import { buildProp, PropInstance } from '../game/props';
 
 /**
  * Helpers for building level geometry: every call registers its visuals and
@@ -10,6 +11,7 @@ import { GROUP, groups, PALETTE, ALL } from '../game/data';
 export class LevelContext {
   objects: THREE.Object3D[] = [];
   bodies: import('@dimforge/rapier3d-compat').RigidBody[] = [];
+  private propInstances: PropInstance[] = [];
   private treeCanopyMat = new THREE.MeshStandardMaterial({ color: PALETTE.treeCanopy, roughness: 0.9 });
   private treeTrunkMat = new THREE.MeshStandardMaterial({ color: PALETTE.treeTrunk, roughness: 0.9 });
   private roadMat = new THREE.MeshStandardMaterial({ color: PALETTE.road, roughness: 0.95 });
@@ -69,6 +71,7 @@ export class LevelContext {
     position: THREE.Vector3;
     yaw?: number;
     pitch?: number;
+    quaternion?: THREE.Quaternion;
     color?: number;
     collider?: boolean;
     material?: 'metal' | 'wood' | 'concrete';
@@ -76,12 +79,14 @@ export class LevelContext {
     castShadow?: boolean;
     visible?: boolean;
     mat?: THREE.Material;
+    friction?: number;
   }): THREE.Mesh {
     const mat =
       opts.mat ??
       new THREE.MeshStandardMaterial({ color: opts.color ?? 0x9c8f7a, roughness: 0.85 });
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(...opts.size), mat);
     mesh.position.copy(opts.position);
+    if (opts.quaternion) mesh.quaternion.copy(opts.quaternion);
     if (opts.yaw) mesh.rotation.y = opts.yaw;
     if (opts.pitch) mesh.rotation.x = opts.pitch;
     mesh.castShadow = opts.castShadow ?? true;
@@ -96,7 +101,7 @@ export class LevelContext {
           .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
       );
       const col = RAPIER.ColliderDesc.cuboid(opts.size[0] / 2, opts.size[1] / 2, opts.size[2] / 2)
-        .setFriction(0.8)
+        .setFriction(opts.friction ?? 0.8)
         .setCollisionGroups(groups(GROUP.GROUND, ALL));
       const collider = this.physics.world.createCollider(col, body);
       this.physics.tagCollider(collider, {
@@ -230,51 +235,64 @@ export class LevelContext {
     segments: number;
     color?: number;
     rails?: boolean;
+    /** Lateral helix shift across the full arc (corkscrew loops). */
+    xShift?: number;
   }) {
     const { x, zStart, radius, width } = opts;
     const centerY = radius;
     const centerZ = zStart;
+    const xShift = opts.xShift ?? 0;
+    const arcLength = Math.abs(opts.angleTo - opts.angleFrom) * radius;
+    const bank = xShift !== 0 ? -Math.atan2(xShift, arcLength) * 0.5 : 0;
     const matA = new THREE.MeshStandardMaterial({ color: opts.color ?? 0x4a4239, roughness: 0.9 });
     const matB = new THREE.MeshStandardMaterial({ color: 0xd9b13b, roughness: 0.85 });
-    const segLen = (Math.abs(opts.angleTo - opts.angleFrom) * radius) / opts.segments + 0.35;
+    const segLen = arcLength / opts.segments + 0.35;
     for (let i = 0; i < opts.segments; i++) {
       const t = (i + 0.5) / opts.segments;
       const ang = opts.angleFrom + (opts.angleTo - opts.angleFrom) * t;
-      const y = centerY - radius * Math.cos(ang);
+      // Sunk slightly so the entry slab sits flush with the ground.
+      const y = centerY - radius * Math.cos(ang) - 0.16;
       const z = centerZ + radius * Math.sin(ang);
-      const mesh = this.addBox({
+      const sx = x + xShift * t;
+      const quat = new THREE.Quaternion()
+        .setFromAxisAngle(new THREE.Vector3(1, 0, 0), -ang)
+        .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), bank));
+      // Slick bed: the chassis may scrape on tight curvature without
+      // bleeding all its speed (wheel grip comes from the controller).
+      this.addBox({
         size: [width, 0.4, segLen],
-        position: new THREE.Vector3(x, y, z),
-        pitch: -ang, // negative pitch raises the +Z edge
+        position: new THREE.Vector3(sx, y, z),
+        quaternion: quat,
         mat: i % 4 === 3 ? matB : matA,
         name: 'track',
+        friction: 0.06,
       });
-      void mesh;
       if (opts.rails) {
         for (const side of [-1, 1]) {
           // Side rails keep the vehicle on the loop.
-          const railMesh = new THREE.Mesh(
-            new THREE.BoxGeometry(0.3, 1.1, segLen),
-            matA
-          );
-          void railMesh;
+          const railOffset = new THREE.Vector3(side * (width / 2 + 0.15), 0.35, 0).applyQuaternion(quat);
           this.addBox({
-            size: [0.3, 1.2, segLen],
-            position: new THREE.Vector3(
-              x + side * (width / 2 + 0.15),
-              y + 0.0,
-              z
-            ),
-            pitch: -ang,
+            size: [0.3, 1.1, segLen],
+            position: new THREE.Vector3(sx, y, z).add(railOffset),
+            quaternion: quat,
             color: 0x4a4239,
             name: 'rail',
+            friction: 0.06,
           });
         }
       }
     }
   }
 
+  /** Level-native (non-hotspot) prop, e.g. a fixed brick wall at the finish. */
+  async addProp(type: PropType, position: THREE.Vector3, yaw = 0) {
+    const instance = await buildProp(type, this.physics, this.scene, { position, yaw });
+    if (instance) this.propInstances.push(instance);
+  }
+
   dispose() {
+    for (const p of this.propInstances) p.dispose();
+    this.propInstances = [];
     for (const b of this.bodies) this.physics.world.removeRigidBody(b);
     for (const o of this.objects) this.scene.remove(o);
     this.bodies = [];

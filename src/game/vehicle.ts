@@ -17,6 +17,8 @@ export interface VehicleDef {
   seat: { x: number; y: number; z: number };
   poses: PoseId[];
   wheelScale?: number;
+  /** Joke vehicles: hidden keel ballast + roll damping so they ride until hit. */
+  stabilized?: boolean;
   /** 1..5 stat pips for the picker UI. */
   stats: { speed: number; weight: number; chaos: number };
   locked?: boolean;
@@ -55,15 +57,15 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: 'trike', name: 'Pink Lightning', desc: "Timmy's tricycle. Zero protection, full commitment.",
-    model: 'proc:trike', targetLength: 1.25, mass: 28, maxSpeed: 14, engineForce: 900,
-    seat: { x: 0, y: -0.25, z: -0.28 }, poses: ['seated', 'surfer'],
-    stats: { speed: 1, weight: 1, chaos: 5 },
+    model: 'proc:trike', targetLength: 1.25, mass: 170, maxSpeed: 14, engineForce: 3000,
+    seat: { x: 0, y: -0.02, z: -0.28 }, poses: ['seated', 'surfer'],
+    stats: { speed: 1, weight: 1, chaos: 5 }, stabilized: true,
   },
   {
     id: 'skate', name: 'Street Slicer', desc: 'A plank, four wheels, no plan.',
-    model: 'proc:skate', targetLength: 0.95, mass: 9, maxSpeed: 19, engineForce: 700,
+    model: 'proc:skate', targetLength: 1.7, mass: 130, maxSpeed: 19, engineForce: 3200,
     seat: { x: 0, y: -0.0, z: 0 }, poses: ['surfer', 'seated', 'superman'],
-    stats: { speed: 2, weight: 1, chaos: 5 },
+    stats: { speed: 2, weight: 1, chaos: 5 }, stabilized: true,
   },
   {
     id: 'police', name: 'Sweet Justice', desc: 'Protect and serve... as a projectile.',
@@ -101,6 +103,8 @@ export class Vehicle {
   targetSpeed = 0;
   steerInput = 0;
   private currentSteer = 0;
+  /** Remaining boost delta-v, applied smoothly so straps survive the kick. */
+  private boostDeltaV = 0;
   /** Half height of the chassis collider (for seat placement). */
   chassisHalfHeight = 0.5;
 
@@ -170,24 +174,26 @@ export class Vehicle {
     // Raise chassis if monster wheels would overlap the body.
     this.scene.add(this.chassis);
 
-    // Spawn height: wheels resting on ground.
-    const lowestWheel = Math.min(...this.wheels.map((w) => w.connection.y - w.radius * 0.0));
+    // Spawn height: every wheel must rest on the ground within suspension reach.
     const restLength = 0.18;
     const originY =
-      spawn.position.y + Math.max(...this.wheels.map((w) => w.radius)) - lowestWheel + restLength * 0.5;
+      spawn.position.y +
+      Math.max(...this.wheels.map((w) => w.radius - w.connection.y)) +
+      restLength * 0.3;
 
     const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), spawn.yaw);
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(spawn.position.x, originY, spawn.position.z)
       .setRotation({ x: yawQuat.x, y: yawQuat.y, z: yawQuat.z, w: yawQuat.w })
       .setLinearDamping(0.05)
-      .setAngularDamping(0.8)
+      .setAngularDamping(this.def.stabilized ? 3.5 : 0.8)
       .setCcdEnabled(true)
       .setAdditionalSolverIterations(2);
     this.body = this.physics.world.createRigidBody(bodyDesc);
 
+    const keel = this.def.stabilized ?? false;
     const volume = 8 * half.x * half.y * half.z;
-    const mainDensity = (this.def.mass * 0.65) / volume;
+    const mainDensity = (this.def.mass * (keel ? 0.25 : 0.65)) / volume;
     const colliderDesc = RAPIER.ColliderDesc.cuboid(half.x * 0.92, half.y * 0.88, half.z * 0.96)
       .setDensity(mainDensity)
       .setFriction(0.6)
@@ -199,11 +205,14 @@ export class Vehicle {
     this.collider = this.physics.world.createCollider(colliderDesc, this.body);
     this.physics.tagCollider(this.collider, { kind: 'vehicle', name: this.def.id, material: 'metal' });
 
-    // Ballast: low slab holding ~35% of mass to keep the center of mass down.
+    // Ballast: low slab keeping the center of mass down. Joke vehicles get a
+    // deep keel holding most of their mass so the dummy doesn't tip them.
+    const ballastShare = keel ? 0.75 : 0.35;
+    const ballastY = keel ? -half.y * 1.6 : -half.y * 0.75;
     const ballastVol = 8 * half.x * 0.5 * (half.y * 0.2) * (half.z * 0.5);
     const ballast = RAPIER.ColliderDesc.cuboid(half.x * 0.5, half.y * 0.2, half.z * 0.5)
-      .setTranslation(0, -half.y * 0.75, 0)
-      .setDensity((this.def.mass * 0.35) / ballastVol)
+      .setTranslation(0, ballastY, 0)
+      .setDensity((this.def.mass * ballastShare) / ballastVol)
       .setCollisionGroups(groups(GROUP.VEHICLE, GROUP.GROUND))
       .setFriction(0.5);
     this.physics.world.createCollider(ballast, this.body);
@@ -221,13 +230,14 @@ export class Vehicle {
         suspensionRest,
         w.radius
       );
-      this.controller.setWheelSuspensionStiffness(i, 32);
+      this.controller.setWheelSuspensionStiffness(i, 38);
       this.controller.setWheelFrictionSlip(i, 90);
       this.controller.setWheelSideFrictionStiffness(i, 0.9);
       this.controller.setWheelSuspensionCompression(i, 2.2);
       this.controller.setWheelSuspensionRelaxation(i, 2.6);
       this.controller.setWheelMaxSuspensionTravel(i, 0.32);
-      this.controller.setWheelMaxSuspensionForce(i, this.def.mass * 28);
+      // High cap so loops can supply centripetal force through the wheels.
+      this.controller.setWheelMaxSuspensionForce(i, this.def.mass * 130);
     });
   }
 
@@ -265,9 +275,25 @@ export class Vehicle {
     this.targetSpeed = this.def.maxSpeed * (0.25 + 0.75 * power);
   }
 
+  /** Turbo pad: adds deltaV m/s spread over ~0.35s of simulated time. */
+  applyBoost(deltaV: number) {
+    this.boostDeltaV += deltaV;
+  }
+
   /** Called before each world.step. */
   fixedStep(dt: number) {
     if (!this.driving || this.crashed) return;
+    if (this.boostDeltaV > 0) {
+      const dv = Math.min(this.boostDeltaV, (9 / 0.6) * dt);
+      this.boostDeltaV -= dv;
+      const rot = this.body.rotation();
+      const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(
+        new THREE.Quaternion(rot.x, rot.y, rot.z, rot.w)
+      );
+      fwd.y = 0;
+      fwd.normalize().multiplyScalar(this.body.mass() * dv);
+      this.body.applyImpulse({ x: fwd.x, y: 0, z: fwd.z }, true);
+    }
     const speed = this.speed;
     const force = speed < this.targetSpeed ? this.def.engineForce : 0;
     this.currentSteer = THREE.MathUtils.lerp(this.currentSteer, this.steerInput * 0.55, 0.12);
@@ -297,6 +323,17 @@ export class Vehicle {
   get speed(): number {
     const v = this.body.linvel();
     return Math.hypot(v.x, v.y, v.z);
+  }
+
+  /** True when at least one wheel ray touches the ground. */
+  get grounded(): boolean {
+    for (let i = 0; i < this.wheels.length; i++) {
+      const inContact = (
+        this.controller as unknown as { wheelIsInContact?: (i: number) => boolean }
+      ).wheelIsInContact?.(i);
+      if (inContact) return true;
+    }
+    return false;
   }
 
   get position(): THREE.Vector3 {
@@ -407,28 +444,37 @@ function buildTrike(): { bodyNode: THREE.Object3D; wheelNodes: THREE.Object3D[] 
 }
 
 function buildSkateboard(): { bodyNode: THREE.Object3D; wheelNodes: THREE.Object3D[] } {
+  // Oversized longboard: big enough for the raycast vehicle to behave.
   const deckMat = new THREE.MeshStandardMaterial({ color: 0xc98e4a, roughness: 0.6 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0xf0e6c8, roughness: 0.5 });
+  const light = new THREE.MeshStandardMaterial({ color: 0xf0e6c8, roughness: 0.5 });
   const bodyNode = new THREE.Group();
   bodyNode.name = 'body';
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.03, 0.85), deckMat);
-  deck.position.y = 0.1;
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 1.5), deckMat);
+  deck.position.y = 0.21;
   deck.castShadow = true;
   bodyNode.add(deck);
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.03, 0.12), deckMat);
-  nose.position.set(0, 0.125, 0.46);
-  nose.rotation.x = -0.45;
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.065, 1.5), light);
+  stripe.position.y = 0.212;
+  bodyNode.add(stripe);
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.22), deckMat);
+  nose.position.set(0, 0.245, 0.82);
+  nose.rotation.x = -0.4;
   bodyNode.add(nose);
   const tail = nose.clone();
-  tail.position.z = -0.46;
-  tail.rotation.x = 0.45;
+  tail.position.z = -0.82;
+  tail.rotation.x = 0.4;
   bodyNode.add(tail);
+  for (const z of [0.5, -0.5]) {
+    const truck = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.07, 0.1), light);
+    truck.position.set(0, 0.14, z);
+    bodyNode.add(truck);
+  }
 
   const wheelNodes = [
-    procWheel('wheel-front-left', -0.1, 0.05, 0.3, 0.05, dark, dark),
-    procWheel('wheel-front-right', 0.1, 0.05, 0.3, 0.05, dark, dark),
-    procWheel('wheel-back-left', -0.1, 0.05, -0.3, 0.05, dark, dark),
-    procWheel('wheel-back-right', 0.1, 0.05, -0.3, 0.05, dark, dark),
+    procWheel('wheel-front-left', -0.22, 0.1, 0.5, 0.1, light, light),
+    procWheel('wheel-front-right', 0.22, 0.1, 0.5, 0.1, light, light),
+    procWheel('wheel-back-left', -0.22, 0.1, -0.5, 0.1, light, light),
+    procWheel('wheel-back-right', 0.22, 0.1, -0.5, 0.1, light, light),
   ];
   return { bodyNode, wheelNodes };
 }
